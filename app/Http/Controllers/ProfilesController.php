@@ -3,72 +3,86 @@
 namespace App\Http\Controllers;
 
 use App\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Intervention\Image\Facades\Image;
+use App\Http\Requests\StoreProfileRequest;
+use Illuminate\Support\Facades\Cache;
 
 class ProfilesController extends Controller
 {
-    public function index(User $user)
-    {
-        $follows = (auth()->user()) ? auth()->user()->following->contains($user->id) : false;
+	/**
+     * Show the current profile of the auth user.
+     *
+     * @return \Illuminate\Contracts\Support\Renderable
+     */
+    public function show(User $user)
+	{
+		$follows = (auth()->user()) ? auth()->user()->following->contains($user->id) : false;
 
-        $postCount = Cache::remember(
-            'count.posts.' . $user->id,
-            now()->addSeconds(30),
-            function () use ($user) {
-                return $user->posts->count();
-            });
+		$postsCount = Cache::remember(
+			'count.posts.' . $user->id,
+			now()->addSeconds(30), 
+			function () use($user) {
+				return $user->posts->count();
+			});;
 
-        $followersCount = Cache::remember(
-            'count.followers.' . $user->id,
-            now()->addSeconds(30),
-            function () use ($user) {
-                return $user->profile->followers->count();
-            });
+		$followersCount = Cache::remember(
+			'count.followers.' .$user->id, 
+			now()->addSeconds(30), 
+			function () use($user) {
+				return $user->profile->followers->count();
+			});;
 
-        $followingCount = Cache::remember(
-            'count.following.' . $user->id,
-            now()->addSeconds(30),
-            function () use ($user) {
-                return $user->following->count();
-            });
+		$followingCount = Cache::remember(
+			'count.following.' . $user->id, 
+			now()->addSeconds(30), 
+			function () use($user) {
+				return $user->following->count();
+			});;
 
-        return view('profiles.index', compact('user', 'follows', 'postCount', 'followersCount', 'followingCount'));
-    }
+		return view('profiles.show', compact('user', 'follows', 'postsCount', 'followersCount', 'followingCount'));
+	}
 
-    public function edit(User $user)
-    {
-        $this->authorize('update', $user->profile);
+	/**
+	 * Show the form for editing the specified resource.
+	 *
+	 * @param  User  $user
+	 * @return \Illuminate\Http\Response
+	 */
+	public function edit(User $user)
+	{
+		$this->authorize('update', $user->profile);
 
-        return view('profiles.edit', compact('user'));
-    }
+		return view('profiles.edit', compact('user'));
+	}
 
-    public function update(User $user)
-    {
-        $this->authorize('update', $user->profile);
+	/**
+	 * Update the specified resource in storage.
+	 *
+	 * @param App\Http\Requests\StoreProfileRequest $request
+	 * @param  User  $user
+	 * @return \Illuminate\Http\Response
+	 */
+	public function update(StoreProfileRequest $request, User $user)
+	{
+		$this->authorize('update', $user->profile);
 
-        $data = request()->validate([
-            'title' => 'required',
-            'description' => 'required',
-            'url' => 'url',
-            'image' => '',
-        ]);
+		if (request('image')) {
+			// Saving the image on the uploads folder
+			$imagePath = request('image')->store('profile', 'public');
+			
+			// Adjusting the image by cutting it
+			Image::make(public_path("storage/{$imagePath}"))
+					->fit(150, 150)
+					->save();
 
-        if (request('image')) {
-            $imagePath = request('image')->store('profile', 'public');
+			$imageArray = ['image' => $imagePath];
+		}
 
-            $image = Image::make(public_path("storage/{$imagePath}"))->fit(1000, 1000);
-            $image->save();
+		auth()->user()->profile->update(array_merge(
+				$request->all(), 
+				$imageArray ?? []
+			));
 
-            $imageArray = ['image' => $imagePath];
-        }
-
-        auth()->user()->profile->update(array_merge(
-            $data,
-            $imageArray ?? []
-        ));
-
-        return redirect("/profile/{$user->id}");
-    }
+		return redirect()->route('profile.show', compact('user'));
+	}
 }
